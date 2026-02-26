@@ -9,8 +9,16 @@ interface TokenPayload {
   username: string;
 }
 
+// Exported so services can push events
+export let io: Server;
+
+export function getIo(): Server {
+  if (!io) throw new Error("Socket.IO not initialised");
+  return io;
+}
+
 export function initSocket(httpServer: http.Server) {
-  const io = new Server(httpServer, {
+  io = new Server(httpServer, {
     cors: {
       origin: (process.env.ALLOWED_ORIGINS || "http://localhost:8080")
         .split(",")
@@ -39,6 +47,9 @@ export function initSocket(httpServer: http.Server) {
   io.on("connection", (socket: Socket) => {
     const user = (socket as any).user as TokenPayload;
     logger.info(`Socket connected: ${user.username} (${socket.id})`);
+
+    // Join personal room for targeted notifications
+    socket.join(`user:${user.userId}`);
 
     // ── Join a chat room ─────────────────────────────────
     socket.on("join-chat", (chatId: string) => {

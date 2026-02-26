@@ -3,7 +3,8 @@ import prisma from "../config/prisma";
 import { sendSuccess, sendError } from "../utils/apiResponse";
 import { AuthRequest } from "../middleware/auth.middleware";
 import { getCached, setCache, invalidateCache } from "../config/redis";
-import { calculateTrustLevel, TrustScoreActions } from "../utils/trustScore";
+import { awardTrust } from "../services/trust.service";
+import { notifyComment, notifyVote } from "../services/notification.service";
 
 const POST_SELECT = {
   id: true,
@@ -112,22 +113,8 @@ export async function createPost(
       select: POST_SELECT,
     });
 
-    // Update trust score
-    await prisma.user.update({
-      where: { id: req.user!.userId },
-      data: {
-        trustScore: { increment: TrustScoreActions.POST_CREATED },
-      },
-    });
-    const updatedUser = await prisma.user.findUnique({
-      where: { id: req.user!.userId },
-      select: { trustScore: true },
-    });
-    const newLevel = calculateTrustLevel(updatedUser!.trustScore);
-    await prisma.user.update({
-      where: { id: req.user!.userId },
-      data: { trustLevel: newLevel },
-    });
+    // Update trust score (non-fatal)
+    await awardTrust(req.user!.userId, "POST_CREATED");
 
     await invalidateCache(`feed:all:*`);
 
@@ -236,6 +223,9 @@ export async function votePost(
       }
     } else {
       await prisma.vote.create({ data: { postId, userId, value } });
+      // Notify post author
+      const postRecord = await prisma.post.findUnique({ where: { id: postId }, select: { authorId: true } });
+      if (postRecord) notifyVote(postRecord.authorId, userId, postId, value);
       sendSuccess(res, { voted: true, value }, "Vote recorded");
     }
   } catch (err) {
@@ -268,6 +258,10 @@ export async function addComment(
         author: { select: { id: true, username: true, avatar: true, trustLevel: true } },
       },
     });
+
+    // Notify post author (non-fatal)
+    const post = await prisma.post.findUnique({ where: { id: postId }, select: { authorId: true } });
+    if (post) notifyComment(post.authorId, req.user!.userId, postId);
 
     sendSuccess(res, { comment }, "Comment added", 201);
   } catch (err) {

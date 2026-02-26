@@ -2,7 +2,8 @@ import { Response, NextFunction } from "express";
 import prisma from "../config/prisma";
 import { sendSuccess, sendError } from "../utils/apiResponse";
 import { AuthRequest } from "../middleware/auth.middleware";
-import { calculateTrustLevel, TrustScoreActions } from "../utils/trustScore";
+import { awardTrustToMany } from "../services/trust.service";
+import { notifyMatch } from "../services/notification.service";
 
 // GET /api/v1/match/profiles?skills=React,Node
 // Returns paginated list of users the current user has NOT yet swiped on
@@ -101,23 +102,11 @@ export async function swipe(
         data: { status: "MATCHED" },
       });
 
-      // Trust score boost for both
-      await prisma.user.updateMany({
-        where: { id: { in: [fromUserId, toUserId] } },
-        data: { trustScore: { increment: TrustScoreActions.MATCH_MADE } },
-      });
+      // Trust score boost for both (non-fatal)
+      await awardTrustToMany([fromUserId, toUserId], "MATCH_MADE");
 
-      // Recalculate trust levels
-      for (const uid of [fromUserId, toUserId]) {
-        const u = await prisma.user.findUnique({
-          where: { id: uid },
-          select: { trustScore: true },
-        });
-        await prisma.user.update({
-          where: { id: uid },
-          data: { trustLevel: calculateTrustLevel(u!.trustScore) },
-        });
-      }
+      // Push real-time notification to both users
+      notifyMatch(fromUserId, toUserId);
 
       sendSuccess(res, { matched: true, toUserId }, "It's a match! 🎉");
       return;

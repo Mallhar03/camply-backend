@@ -2,6 +2,7 @@ import { Response, NextFunction } from "express";
 import prisma from "../config/prisma";
 import { sendSuccess, sendError } from "../utils/apiResponse";
 import { AuthRequest } from "../middleware/auth.middleware";
+import { notifyTeamInvite } from "../services/notification.service";
 
 const TEAM_SELECT = {
   id: true,
@@ -162,6 +163,8 @@ export async function inviteMember(
     });
 
     const team = await prisma.team.findUnique({ where: { id: teamId }, select: TEAM_SELECT });
+    // Notify the new member in real-time
+    if (team) notifyTeamInvite(invitee.id, teamId, team.name);
     sendSuccess(res, { team }, "Member added");
   } catch (err) {
     next(err);
