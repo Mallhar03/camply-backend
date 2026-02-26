@@ -1,0 +1,229 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────────────────
+
+enum TrustLevel {
+  BRONZE
+  SILVER
+  GOLD
+  PLATINUM
+}
+
+enum PostCategory {
+  QUERY
+  SOLUTION
+  JOB
+  DISCUSSION
+}
+
+enum MatchStatus {
+  PENDING
+  MATCHED
+  REJECTED
+}
+
+enum TeamRole {
+  OWNER
+  MEMBER
+}
+
+// ─────────────────────────────────────────────────────────
+// USER
+// ─────────────────────────────────────────────────────────
+
+model User {
+  id           String     @id @default(uuid())
+  name         String
+  username     String     @unique
+  email        String     @unique
+  passwordHash String
+  bio          String?
+  avatar       String?    // Cloudinary URL
+  college      String?
+  skills       String[]   // e.g. ["React", "Node.js"]
+  trustLevel   TrustLevel @default(BRONZE)
+  trustScore   Int        @default(0)
+
+  // Auth
+  refreshTokens RefreshToken[]
+
+  // Social
+  posts         Post[]
+  comments      Comment[]
+  votes         Vote[]
+  sentLikes     MatchLike[]   @relation("SentLikes")
+  receivedLikes MatchLike[]   @relation("ReceivedLikes")
+
+  // Teams
+  teamMembers   TeamMember[]
+
+  // Chats
+  messages      Message[]
+  chatMembers   ChatMember[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([username])
+  @@index([email])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([token])
+}
+
+// ─────────────────────────────────────────────────────────
+// POSTS
+// ─────────────────────────────────────────────────────────
+
+model Post {
+  id       String       @id @default(uuid())
+  content  String
+  category PostCategory @default(DISCUSSION)
+  authorId String
+  author   User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  comments Comment[]
+  votes    Vote[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([authorId])
+  @@index([category])
+  @@index([createdAt])
+}
+
+model Comment {
+  id       String @id @default(uuid())
+  content  String
+  postId   String
+  post     Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([postId])
+}
+
+model Vote {
+  id     String  @id @default(uuid())
+  value  Int     // 1 = upvote, -1 = downvote
+  postId String
+  post   Post    @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId String
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([postId, userId])
+  @@index([postId])
+}
+
+// ─────────────────────────────────────────────────────────
+// MATCHING
+// ─────────────────────────────────────────────────────────
+
+model MatchLike {
+  id         String      @id @default(uuid())
+  fromUserId String
+  toUserId   String
+  fromUser   User        @relation("SentLikes", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser     User        @relation("ReceivedLikes", fields: [toUserId], references: [id], onDelete: Cascade)
+  status     MatchStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+
+  @@unique([fromUserId, toUserId])
+  @@index([fromUserId])
+  @@index([toUserId])
+}
+
+// ─────────────────────────────────────────────────────────
+// TEAMS
+// ─────────────────────────────────────────────────────────
+
+model Team {
+  id          String       @id @default(uuid())
+  name        String
+  description String?
+  hackathon   String?
+  roles       String[]     // Roles they're looking for
+  members     TeamMember[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model TeamMember {
+  id     String   @id @default(uuid())
+  teamId String
+  userId String
+  role   TeamRole @default(MEMBER)
+  team   Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  joinedAt DateTime @default(now())
+
+  @@unique([teamId, userId])
+}
+
+// ─────────────────────────────────────────────────────────
+// COMMUNITY CHATS
+// ─────────────────────────────────────────────────────────
+
+model Chat {
+  id      String       @id @default(uuid())
+  name    String
+  topic   String?
+  members ChatMember[]
+  messages Message[]
+
+  createdAt DateTime @default(now())
+}
+
+model ChatMember {
+  id     String @id @default(uuid())
+  chatId String
+  userId String
+  chat   Chat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  joinedAt DateTime @default(now())
+
+  @@unique([chatId, userId])
+}
+
+model Message {
+  id       String @id @default(uuid())
+  content  String
+  chatId   String
+  senderId String
+  chat     Chat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  sender   User   @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([chatId, createdAt])
+}
