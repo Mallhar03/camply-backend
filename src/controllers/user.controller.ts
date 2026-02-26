@@ -173,3 +173,47 @@ export async function searchUsers(
     next(err);
   }
 }
+
+// GET /api/v1/users/:username/posts?page=1&limit=10
+export async function getUserPosts(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const { username } = req.params as { username: string };
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(50, parseInt(req.query.limit as string) || 10);
+    const skip = (page - 1) * limit;
+
+    const user = await prisma.user.findUnique({ where: { username }, select: { id: true } });
+    if (!user) {
+      sendError(res, "User not found", 404);
+      return;
+    }
+
+    const [posts, total] = await Promise.all([
+      prisma.post.findMany({
+        where: { authorId: user.id },
+        select: {
+          id: true,
+          content: true,
+          category: true,
+          createdAt: true,
+          _count: { select: { comments: true, votes: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: limit,
+      }),
+      prisma.post.count({ where: { authorId: user.id } }),
+    ]);
+
+    sendSuccess(res, {
+      posts,
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit), hasMore: skip + limit < total },
+    });
+  } catch (err) {
+    next(err);
+  }
+}

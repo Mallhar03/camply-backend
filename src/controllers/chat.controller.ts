@@ -91,3 +91,58 @@ export async function getMessages(
     next(err);
   }
 }
+
+// POST /api/v1/chats
+export async function createChat(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const { name, topic } = req.body;
+
+    const chat = await prisma.chat.create({
+      data: {
+        name,
+        topic,
+        members: { create: { userId: req.user!.userId } },
+      },
+      select: {
+        id: true,
+        name: true,
+        topic: true,
+        createdAt: true,
+        _count: { select: { members: true } },
+      },
+    });
+
+    sendSuccess(res, { chat }, "Chat created", 201);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// DELETE /api/v1/chats/:id/members/me  (leave chat)
+export async function leaveChat(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const chatId = req.params.id as string;
+    const userId = req.user!.userId;
+
+    const membership = await prisma.chatMember.findUnique({
+      where: { chatId_userId: { chatId, userId } },
+    });
+    if (!membership) {
+      sendError(res, "You are not a member of this chat", 404);
+      return;
+    }
+
+    await prisma.chatMember.delete({ where: { chatId_userId: { chatId, userId } } });
+    sendSuccess(res, null, "Left chat successfully");
+  } catch (err) {
+    next(err);
+  }
+}
