@@ -88,3 +88,28 @@ export const createTeamSchema = z.object({
     roles: z.array(z.string().max(50)).max(10).optional(),
   }),
 });
+
+export const updateTeamSchema = z.object({
+  body: z.object({
+    name: z.string().min(2).max(80).trim().optional(),
+    description: z.string().max(500).optional(),
+    hackathon: z.string().max(100).optional(),
+    roles: z.array(z.string().max(50)).max(10).optional(),
+  }),
+});
+
+// ─── Chats ───────────────────────────────────────────────
+export const createChatSchema = z.object({
+  body: z.object({
+    name: z.string().min(2).max(80).trim(),
+    topic: z.string().max(200).optional(),
+  }),
+});
+
+// ─── Posts (update) ──────────────────────────────────────
+export const updatePostSchema = z.object({
+  body: z.object({
+    content: z.string().min(1).max(5000).trim().optional(),
+    category: z.enum(["QUERY", "SOLUTION", "JOB", "DISCUSSION"]).optional(),
+  }),
+});

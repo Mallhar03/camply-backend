@@ -5,6 +5,7 @@ import {
   updateAvatar,
   changePassword,
   searchUsers,
+  getUserPosts,
 } from "../controllers/user.controller";
 import { authenticate } from "../middleware/auth.middleware";
 import { validate } from "../middleware/validate.middleware";
@@ -15,6 +16,7 @@ const router = Router();
 
 router.get("/search", authenticate, searchUsers);
 router.get("/:username", getProfile);
+router.get("/:username/posts", getUserPosts);
 router.patch("/me", authenticate, validate(updateProfileSchema), updateProfile);
 router.patch("/me/avatar", authenticate, avatarUpload.single("avatar"), updateAvatar);
 router.patch("/me/password", authenticate, validate(changePasswordSchema), changePassword);
