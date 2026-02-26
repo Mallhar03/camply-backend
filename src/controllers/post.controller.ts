@@ -144,8 +144,9 @@ export async function getPost(
   next: NextFunction
 ): Promise<void> {
   try {
+    const { id } = req.params as { id: string };
     const post = await prisma.post.findUnique({
-      where: { id: req.params.id },
+      where: { id },
       select: {
         ...POST_SELECT,
         comments: {
@@ -178,8 +179,9 @@ export async function deletePost(
   next: NextFunction
 ): Promise<void> {
   try {
+    const { id } = req.params as { id: string };
     const post = await prisma.post.findUnique({
-      where: { id: req.params.id },
+      where: { id },
       select: { authorId: true },
     });
 
@@ -193,7 +195,7 @@ export async function deletePost(
       return;
     }
 
-    await prisma.post.delete({ where: { id: req.params.id } });
+    await prisma.post.delete({ where: { id } });
     sendSuccess(res, null, "Post deleted");
   } catch (err) {
     next(err);
@@ -208,7 +210,7 @@ export async function votePost(
 ): Promise<void> {
   try {
     const { value } = req.body; // 1 or -1
-    const postId = req.params.id;
+    const postId = req.params.id as string;
     const userId = req.user!.userId;
 
     if (![1, -1].includes(value)) {
@@ -249,7 +251,7 @@ export async function addComment(
 ): Promise<void> {
   try {
     const { content } = req.body;
-    const postId = req.params.id;
+    const postId = req.params.id as string;
 
     const postExists = await prisma.post.count({ where: { id: postId } });
     if (!postExists) {
@@ -268,6 +270,75 @@ export async function addComment(
     });
 
     sendSuccess(res, { comment }, "Comment added", 201);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// PATCH /api/v1/posts/:id
+export async function updatePost(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const { id } = req.params as { id: string };
+    const { content, category } = req.body;
+
+    const post = await prisma.post.findUnique({ where: { id }, select: { authorId: true } });
+    if (!post) {
+      sendError(res, "Post not found", 404);
+      return;
+    }
+    if (post.authorId !== req.user!.userId) {
+      sendError(res, "Forbidden", 403);
+      return;
+    }
+
+    const updated = await prisma.post.update({
+      where: { id },
+      data: { ...(content !== undefined && { content }), ...(category !== undefined && { category }) },
+      select: POST_SELECT,
+    });
+
+    await invalidateCache(`feed:all:*`);
+    sendSuccess(res, { post: updated }, "Post updated");
+  } catch (err) {
+    next(err);
+  }
+}
+
+// DELETE /api/v1/posts/:id/comments/:commentId
+export async function deleteComment(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const { commentId } = req.params as { commentId: string };
+
+    const comment = await prisma.comment.findUnique({
+      where: { id: commentId },
+      select: { authorId: true, postId: true },
+    });
+    if (!comment) {
+      sendError(res, "Comment not found", 404);
+      return;
+    }
+
+    // Allow author OR post author to delete
+    const post = await prisma.post.findUnique({
+      where: { id: comment.postId },
+      select: { authorId: true },
+    });
+
+    if (comment.authorId !== req.user!.userId && post?.authorId !== req.user!.userId) {
+      sendError(res, "Forbidden", 403);
+      return;
+    }
+
+    await prisma.comment.delete({ where: { id: commentId } });
+    sendSuccess(res, null, "Comment deleted");
   } catch (err) {
     next(err);
   }

@@ -12,8 +12,9 @@ export async function getProfile(
   next: NextFunction
 ): Promise<void> {
   try {
+    const { username } = req.params as { username: string };
     const user = await prisma.user.findUnique({
-      where: { username: req.params.username },
+      where: { username },
       select: {
         id: true,
         name: true,

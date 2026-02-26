@@ -38,7 +38,7 @@ export async function joinChat(
   next: NextFunction
 ): Promise<void> {
   try {
-    const { id: chatId } = req.params;
+    const chatId = req.params.id as string;
     const userId = req.user!.userId;
 
     const chat = await prisma.chat.findUnique({ where: { id: chatId } });
@@ -66,7 +66,7 @@ export async function getMessages(
   next: NextFunction
 ): Promise<void> {
   try {
-    const { id: chatId } = req.params;
+    const chatId = req.params.id as string;
     const cursor = req.query.cursor as string | undefined;
     const limit = Math.min(50, parseInt(req.query.limit as string) || 30);
 
