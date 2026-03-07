@@ -1,6 +1,5 @@
 import { Request, Response, NextFunction } from "express";
 import bcrypt from "bcryptjs";
-import { v4 as uuid } from "uuid";
 import prisma from "../config/prisma";
 import {
   generateAccessToken,
@@ -27,7 +26,7 @@ function setRefreshCookie(res: Response, token: string) {
 
 // ── Helper: build user response (no passwordHash) ─────────
 function safeUser(user: any) {
-  const { passwordHash, ...rest } = user;
+  const { passwordHash: _, ...rest } = user;
   return rest;
 }
 
@@ -163,9 +162,8 @@ export async function refresh(
     }
 
     // Verify token signature first
-    let payload: { userId: string; username: string };
     try {
-      payload = verifyRefreshToken(token);
+      verifyRefreshToken(token);
     } catch {
       sendError(res, "Invalid or expired refresh token", 401);
       return;

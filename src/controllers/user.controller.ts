@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import prisma from "../config/prisma";
 import { sendSuccess, sendError } from "../utils/apiResponse";
 import { AuthRequest } from "../middleware/auth.middleware";
-import { calculateTrustLevel } from "../utils/trustScore";
+import { uploadToCloudinary } from "../config/cloudinary";
 
 // GET /api/v1/users/:username
 export async function getProfile(
@@ -78,15 +78,17 @@ export async function updateAvatar(
   next: NextFunction
 ): Promise<void> {
   try {
-    const file = req.file as any;
-    if (!file?.path) {
+    const file = req.file;
+    if (!file?.buffer) {
       sendError(res, "No image uploaded", 400);
       return;
     }
 
+    const url = await uploadToCloudinary(file.buffer, "camply/avatars");
+
     const user = await prisma.user.update({
       where: { id: req.user!.userId },
-      data: { avatar: file.path },
+      data: { avatar: url },
       select: { id: true, avatar: true },
     });
 
