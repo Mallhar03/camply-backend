@@ -54,7 +54,7 @@ export async function getFeed(
       ]);
 
       const postsWithVotes = await Promise.all(
-        posts.map(async (post) => {
+        posts.map(async (post: any) => {
           const votes = await prisma.vote.groupBy({
             by: ["value"],
             where: { postId: post.id },

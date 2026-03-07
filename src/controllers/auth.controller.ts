@@ -126,7 +126,7 @@ export async function login(
       select: { id: true },
     });
     if (tokens.length >= 3) {
-      const toDelete = tokens.slice(2).map((t) => t.id);
+      const toDelete = tokens.slice(2).map((t: { id: string }) => t.id);
       await prisma.refreshToken.deleteMany({ where: { id: { in: toDelete } } });
     }
 

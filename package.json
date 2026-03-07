@@ -12,7 +12,11 @@
     "db:seed": "tsx scripts/seed.ts",
     "db:studio": "prisma studio",
     "lint": "eslint src/",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "check:security": "bash scripts/security-check.sh",
+    "check:fp": "bash scripts/first-principles-check.sh",
+    "check:all": "npm test && npm run check:security && npm run check:fp"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
