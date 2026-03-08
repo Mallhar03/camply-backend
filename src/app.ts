@@ -21,7 +21,7 @@ const app = express();
 // ─── Security ───────────────────────────────────────────
 app.use(helmet());
 
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:8080")
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:8080,http://localhost:5173")
   .split(",")
   .map((o) => o.trim());
 
