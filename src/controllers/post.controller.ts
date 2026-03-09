@@ -279,6 +279,7 @@ export async function addComment(
     const post = await prisma.post.findUnique({ where: { id: postId }, select: { authorId: true } });
     if (post) notifyComment(post.authorId, req.user!.userId, postId);
 
+    await invalidateCache(`feed:*`);
     sendSuccess(res, { comment }, "Comment added", 201);
   } catch (err) {
     next(err);
