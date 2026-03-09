@@ -18,25 +18,26 @@ import { notFound } from "./middleware/notFound.middleware";
 
 const app = express();
 
+// ✅ Trust Railway/Render/Vercel proxy — MUST be before rate limiter
+app.set("trust proxy", 1);
+
 // ─── Security ───────────────────────────────────────────
 app.use(helmet());
 
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:8080")
   .split(",")
-  .map((o) => o.trim());
+  .map((o) => o.trim().replace(/\/$/, ""));
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow all origins in development (for mobile network testing)
-      if (process.env.NODE_ENV !== "production") {
-        return callback(null, true);
-      }
-      
-      // Allow requests with no origin (e.g. mobile / Postman)
-      if (!origin || allowedOrigins.includes(origin)) {
+      if (!origin) return callback(null, true);
+      if (process.env.NODE_ENV !== "production") return callback(null, true);
+      const clean = origin.replace(/\/$/, "");
+      if (allowedOrigins.includes(clean)) {
         callback(null, true);
       } else {
+        console.error(`CORS blocked: ${origin}`);
         callback(new Error(`CORS: ${origin} not allowed`));
       }
     },
@@ -46,7 +47,7 @@ app.use(
 
 // ─── Rate limiting ───────────────────────────────────────
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 min
+  windowMs: 15 * 60 * 1000,
   max: 200,
   standardHeaders: true,
   legacyHeaders: false,
@@ -54,7 +55,6 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-// Stricter limiter for auth routes
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
