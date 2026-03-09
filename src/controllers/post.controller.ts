@@ -227,23 +227,47 @@ export async function votePost(
 
     if (existing) {
       if (existing.value === value) {
-        // Toggle off
+        // Toggle off — remove vote
         await prisma.vote.delete({ where: { postId_userId: { postId, userId } } });
-        sendSuccess(res, { voted: false }, "Vote removed");
       } else {
+        // Switch vote direction
         await prisma.vote.update({
           where: { postId_userId: { postId, userId } },
           data: { value },
         });
-        sendSuccess(res, { voted: true, value }, "Vote updated");
       }
     } else {
+      // New vote
       await prisma.vote.create({ data: { postId, userId, value } });
-      // Notify post author
-      const postRecord = await prisma.post.findUnique({ where: { id: postId }, select: { authorId: true } });
+      const postRecord = await prisma.post.findUnique({
+        where: { id: postId },
+        select: { authorId: true },
+      });
       if (postRecord) notifyVote(postRecord.authorId, userId, postId, value);
-      sendSuccess(res, { voted: true, value }, "Vote recorded");
     }
+
+    // Always return fresh counts + current userVote after any change
+    const allVotes = await prisma.vote.groupBy({
+      by: ["value"],
+      where: { postId },
+      _count: { value: true },
+    });
+
+    const upvotes = allVotes.find((v) => v.value === 1)?._count.value || 0;
+    const downvotes = allVotes.find((v) => v.value === -1)?._count.value || 0;
+
+    const currentVote = await prisma.vote.findUnique({
+      where: { postId_userId: { postId, userId } },
+      select: { value: true },
+    });
+
+    await invalidateCache(`feed:*`);
+
+    sendSuccess(res, {
+      upvotes,
+      downvotes,
+      userVote: currentVote?.value ?? null,
+    }, "Vote updated");
   } catch (err) {
     next(err);
   }
