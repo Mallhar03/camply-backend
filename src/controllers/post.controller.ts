@@ -37,63 +37,76 @@ export async function getFeed(
     const skip = (page - 1) * limit;
 
     const cacheKey = `feed:${category || "all"}:${page}:${limit}`;
-    const cached = await getCached(cacheKey);
-    if (cached) {
-      sendSuccess(res, cached);
-      return;
+    let cachedPayload = await getCached(cacheKey);
+
+    if (!cachedPayload) {
+      const where = category ? { category: category as any } : {};
+
+      const [posts, total] = await Promise.all([
+        prisma.post.findMany({
+          where,
+          select: POST_SELECT,
+          orderBy: { createdAt: "desc" },
+          skip,
+          take: limit,
+        }),
+        prisma.post.count({ where }),
+      ]);
+
+      const postsWithVotes = await Promise.all(
+        posts.map(async (post) => {
+          const votes = await prisma.vote.groupBy({
+            by: ["value"],
+            where: { postId: post.id },
+            _count: { value: true },
+          });
+          const upvotes = votes.find((v: { value: number; _count: { value: number } }) => v.value === 1)?._count.value || 0;
+          const downvotes = votes.find((v: { value: number; _count: { value: number } }) => v.value === -1)?._count.value || 0;
+          return { ...post, upvotes, downvotes };
+        })
+      );
+
+      cachedPayload = {
+        posts: postsWithVotes,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+          hasMore: skip + limit < total,
+        },
+      };
+
+      await setCache(cacheKey, cachedPayload, 60); // 1 min TTL
     }
 
-    const where = category ? { category: category as any } : {};
+    // Now, dynamically attach user-specific data (userVote) to the cached/fresh payload
+    if (req.user) {
+      const userId = req.user.userId;
+      const postIds = (cachedPayload as any).posts.map((p: any) => p.id);
+      
+      const userVotes = await prisma.vote.findMany({
+        where: {
+          userId,
+          postId: { in: postIds }
+        },
+        select: { postId: true, value: true }
+      });
+      
+      const voteMap = new Map(userVotes.map((v: any) => [v.postId, v.value]));
+      
+      (cachedPayload as any).posts = (cachedPayload as any).posts.map((post: any) => ({
+        ...post,
+        userVote: voteMap.get(post.id) ?? null
+      }));
+    } else {
+      (cachedPayload as any).posts = (cachedPayload as any).posts.map((post: any) => ({
+        ...post,
+        userVote: null
+      }));
+    }
 
-    const [posts, total] = await Promise.all([
-      prisma.post.findMany({
-        where,
-        select: POST_SELECT,
-        orderBy: { createdAt: "desc" },
-        skip,
-        take: limit,
-      }),
-      prisma.post.count({ where }),
-    ]);
-
-    // Compute vote counts per post
-    const postsWithVotes = await Promise.all(
-      posts.map(async (post) => {
-        const votes = await prisma.vote.groupBy({
-          by: ["value"],
-          where: { postId: post.id },
-          _count: { value: true },
-        });
-        const upvotes = votes.find((v) => v.value === 1)?._count.value || 0;
-        const downvotes = votes.find((v) => v.value === -1)?._count.value || 0;
-
-        // If authed, check user's own vote
-        let userVote: number | null = null;
-        if (req.user) {
-          const myVote = await prisma.vote.findUnique({
-            where: { postId_userId: { postId: post.id, userId: req.user.userId } },
-            select: { value: true },
-          });
-          userVote = myVote?.value ?? null;
-        }
-
-        return { ...post, upvotes, downvotes, userVote };
-      })
-    );
-
-    const payload = {
-      posts: postsWithVotes,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-        hasMore: skip + limit < total,
-      },
-    };
-
-    await setCache(cacheKey, payload, 60); // 1 min TTL
-    sendSuccess(res, payload);
+    sendSuccess(res, cachedPayload);
   } catch (err) {
     next(err);
   }
