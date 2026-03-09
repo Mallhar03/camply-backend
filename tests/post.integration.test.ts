@@ -20,12 +20,10 @@ describe('Post Controller Integration', () => {
   let testPost: any;
 
   beforeAll(() => {
-    // Generate a valid JWT token
     token = generateAccessToken({ userId: 'test-user-id', username: 'testuser' });
   });
 
   it('should create a new post connected to simulated database', async () => {
-    // Mock the prisma response for creating a post
     const mockPost = {
       id: 'post-123',
       content: 'This is a real integration test post',
@@ -42,7 +40,7 @@ describe('Post Controller Integration', () => {
       },
       _count: { comments: 0, votes: 0 }
     };
-    
+
     (prisma.post.create as any).mockResolvedValue(mockPost);
 
     const res = await request(app)
@@ -56,44 +54,39 @@ describe('Post Controller Integration', () => {
     expect(res.status).toBe(201);
     expect(res.body.success).toBe(true);
     expect(prisma.post.create).toHaveBeenCalledOnce();
-    
+
     testPost = res.body.data.post;
   });
 
   it('should get feed with pagination without leaking user vote state', async () => {
-    // Mock Redis returning nothing, forcing a DB fetch
     vi.mocked(redisClient.getCached).mockResolvedValue(null);
 
-    // Mock post fetching
     (prisma.post.findMany as any).mockResolvedValue([
       { id: 'post-123', content: 'hello', category: 'DISCUSSION' }
     ]);
     (prisma.post.count as any).mockResolvedValue(1);
 
-    // Mock global vote grouping
+    // ✅ Fix: include postId in groupBy mock to match new single-query approach
     (prisma.vote.groupBy as any).mockResolvedValue([
-      { value: 1, _count: { value: 1 } }
+      { postId: 'post-123', value: 1, _count: { value: 1 } }
     ]);
 
-    // Mock user specific vote fetch (simulating cache miss)
     (prisma.vote.findMany as any).mockResolvedValue([
       { postId: 'post-123', value: 1 }
     ]);
 
-    // Fetch the feed as the authed user
     const resAuth = await request(app)
       .get('/api/v1/posts?limit=1')
       .set('Authorization', `Bearer ${token}`);
 
     expect(resAuth.status).toBe(200);
     expect(resAuth.body.data.posts[0].upvotes).toBe(1);
-    expect(resAuth.body.data.posts[0].userVote).toBe(1); // Attached correctly to me
+    expect(resAuth.body.data.posts[0].userVote).toBe(1);
 
-    // Reset mocks for unauthed run
+    // Reset for unauthenticated run
     vi.mocked(redisClient.getCached).mockResolvedValue(null);
-    (prisma.vote.findMany as any).mockResolvedValue([]); // unauthed doesn't fetch personal votes
+    (prisma.vote.findMany as any).mockResolvedValue([]);
 
-    // Fetch the feed as an unauthenticated user (simulating cache hit)
     const resNoAuth = await request(app).get('/api/v1/posts?limit=1');
     expect(resNoAuth.status).toBe(200);
     expect(resNoAuth.body.data.posts[0].userVote).toBeNull(); // No leak!
