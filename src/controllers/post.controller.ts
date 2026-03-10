@@ -32,7 +32,7 @@ export async function getFeed(
 ): Promise<void> {
   try {
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
-    const limit = Math.min(50, parseInt(req.query.limit as string) || 10);
+    const limit = Math.min(50, parseInt(req.query.limit as string) || 20);
     const category = req.query.category as string | undefined;
     const skip = (page - 1) * limit;
 
