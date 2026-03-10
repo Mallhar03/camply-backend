@@ -39,11 +39,9 @@ export async function setCache(
 export async function invalidateCache(pattern: string): Promise<void> {
   try {
     if (pattern.includes('*')) {
-      const keys = await redisClient.keys(pattern);
-      if (keys.length > 0) {
-        for (const k of keys) {
-          await redisClient.del(k);
-        }
+      const matchPattern = pattern;
+      for await (const key of redisClient.scanIterator({ MATCH: matchPattern, COUNT: 100 })) {
+        await redisClient.del(key);
       }
     } else {
       await redisClient.del(pattern);
