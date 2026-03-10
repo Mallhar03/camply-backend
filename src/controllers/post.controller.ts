@@ -279,8 +279,6 @@ export async function votePost(
       select: { value: true },
     });
 
-    await invalidateCache(`feed:*`);
-
     sendSuccess(res, {
       upvotes,
       downvotes,
