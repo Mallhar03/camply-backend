@@ -250,3 +250,296 @@ prisma/
 scripts/
 └── seed.ts          # Sample data
 ```
+
+
+#problems we have faced
+
+
+# 🛠️ Dev Log — Problems Faced & How I Solved Them
+
+A honest log of real bugs I hit while building Camply and exactly how I fixed them.
+
+---
+
+## 1. 🗑️ Deleted Posts Still Showing in Feed
+
+**Problem:**
+After deleting a post, it would still appear in the feed for up to 5 minutes.
+The post was being deleted from the database successfully, but the frontend
+kept showing it because the backend was returning a **cached version** of the feed
+from Redis.
+
+**Root Cause:**
+The `deletePost` controller was missing a cache invalidation call after the DB delete.
+```typescript
+// ❌ Before — cache never cleared
+await prisma.post.delete({ where: { id } });
+sendSuccess(res, null, "Post deleted");
+
+// ✅ After — cache cleared immediately
+await prisma.post.delete({ where: { id } });
+await invalidateCache(`feed:*`);
+sendSuccess(res, null, "Post deleted");
+```
+
+**Lesson:**
+Every write operation (create, update, delete) that affects cached data
+must invalidate the relevant cache keys.
+
+---
+
+## 2. 👁️ Three-Dot Menu Hidden on Mobile
+
+**Problem:**
+The post options menu (⋯) was completely invisible on mobile devices.
+Users couldn't delete or share their own posts on phones.
+
+**Root Cause:**
+The button had `opacity-0 group-hover:opacity-100` applied — which works
+on desktop with hover, but on mobile there is no hover state, so the
+button stayed permanently invisible.
+
+**Fix:**
+```
+// ❌ Before — invisible on mobile
+opacity-0 group-hover:opacity-100
+
+// ✅ After — visible on mobile, hover effect on desktop
+opacity-100 md:opacity-0 md:group-hover:opacity-100
+```
+
+**Lesson:**
+Never hide interactive UI elements with hover-only CSS.
+Always keep them visible on mobile by default.
+
+---
+
+## 3. 💬 Comment Count Stale After Adding Comment
+
+**Problem:**
+After a user added a comment, the comment count on the post card
+stayed the same. It only updated after a full page refresh.
+
+**Root Cause:**
+The `addComment` backend controller was saving the comment to the DB
+but never invalidating the Redis feed cache. So the feed still returned
+the old cached post with the old `_count.comments` value.
+
+**Fix:**
+```typescript
+// ✅ Added after comment is created
+await invalidateCache(`feed:*`);
+sendSuccess(res, { comment }, "Comment added", 201);
+```
+
+**Lesson:**
+Any action that changes a count or aggregate shown in a cached feed
+must bust that cache.
+
+---
+
+## 4. 🔄 Feed Not Refreshing After New Post Created
+
+**Problem:**
+After creating a new post, the feed wouldn't show the new post immediately.
+User had to manually refresh the page to see it.
+
+**Root Cause:**
+The frontend was calling `refetch()` from the current useQuery instance.
+But `refetch()` only re-runs the exact current query — if the query was
+stale or the filter had changed, it silently did nothing.
+
+**Fix:**
+```typescript
+// ❌ Before — unreliable
+const handlePostCreated = () => {
+  refetch();
+};
+
+// ✅ After — forces all feed queries to reload
+const handlePostCreated = () => {
+  queryClient.invalidateQueries({ queryKey: ["feed"] });
+};
+```
+
+**Lesson:**
+Use `queryClient.invalidateQueries()` instead of `refetch()` when you want
+to guarantee fresh data across all query variants (different filters, pages etc.)
+
+---
+
+## 5. 📤 Share Button Copying Wrong URL
+
+**Problem:**
+The Share Post button was copying `https://beta.camply.live` (just the homepage)
+instead of the actual post URL.
+
+**Root Cause:**
+The onClick handler was using `window.location.origin` which only gives
+the domain, not the full path.
+
+**Fix:**
+```typescript
+// ❌ Before — copies homepage
+navigator.clipboard.writeText(window.location.origin);
+
+// ✅ After — copies actual post URL
+const postUrl = `${window.location.origin}/posts/${id}`;
+// Uses native share sheet on mobile, clipboard on desktop
+if (navigator.share) {
+  navigator.share({ title, text, url: postUrl });
+} else {
+  navigator.clipboard.writeText(postUrl);
+}
+```
+
+**Lesson:**
+Always test share/copy features end-to-end. `window.location.origin`
+only gives you the domain — always append the specific resource path.
+
+---
+
+## 6. 🗳️ Votes Causing Posts to Disappear from Feed
+
+**Problem:**
+When a user voted on a post, other posts would randomly disappear
+from the feed or the entire feed would re-sort/reload unexpectedly.
+
+**Root Cause:**
+Two things were happening simultaneously:
+1. The backend was calling `invalidateCache("feed:*")` on every vote
+2. The frontend was calling `queryClient.invalidateQueries(["feed"])` on every vote
+
+This caused a full feed refetch on every single vote, which reset
+pagination and reordered posts.
+
+**Fix:**
+Votes should **never** bust the feed cache. The vote counts are fine
+to be slightly stale. Only the vote buttons on the specific post
+need to update instantly via optimistic updates.
+
+```typescript
+// ❌ Removed from votePost controller
+await invalidateCache(`feed:*`); // ← was causing full feed reload
+
+// ❌ Removed from frontend handleVote
+queryClient.invalidateQueries({ queryKey: ["feed"] }); // ← was causing disappearing posts
+```
+
+**What should invalidate the feed cache:**
+
+| Action | Bust Cache? |
+|--------|------------|
+| Create post | ✅ Yes |
+| Delete post | ✅ Yes |
+| Edit post | ✅ Yes |
+| Vote on post | ❌ No |
+| Add comment | ✅ Yes (count changes) |
+| Delete comment | ❌ No |
+
+**Lesson:**
+Not every write action needs to bust the entire feed cache.
+Over-invalidation causes worse UX than slightly stale data.
+
+---
+
+## 7. ↩️ Vote State Not Reverting on API Failure
+
+**Problem:**
+If a vote API call failed (network error, server down), the UI
+would show the wrong vote state permanently. The optimistic update
+applied but never rolled back.
+
+**Root Cause:**
+The `previousVote` variable was saved but never actually used
+in the catch block to restore state.
+
+**Fix:**
+```typescript
+// Save ALL previous state before optimistic update
+const prevVote = userVote;
+const prevUpvotes = currentUpvotes;
+const prevDownvotes = currentDownvotes;
+
+// Apply optimistic update...
+
+try {
+  const result = await votePost(id, type);
+  // Sync with real server counts
+  setCurrentUpvotes(result.upvotes);
+  setCurrentDownvotes(result.downvotes);
+  setUserVote(result.userVote);
+} catch (error) {
+  // ✅ Actually rollback now
+  setCurrentUpvotes(prevUpvotes);
+  setCurrentDownvotes(prevDownvotes);
+  setUserVote(prevVote);
+}
+```
+
+**Lesson:**
+Optimistic updates MUST have a proper rollback. Save the complete
+previous state before mutating, not just one piece of it.
+
+---
+
+## 8. 🔌 Redis Cache Working But Vote Counts Wrong After Refresh
+
+**Problem:**
+Vote counts shown in the feed were correct initially but wrong
+after page refresh. The cached feed had stale vote counts.
+
+**Root Cause:**
+The feed cache stored upvote/downvote counts at cache-write time.
+When users voted, the DB updated but the cache was stale (5 min TTL).
+The backend was also not returning real-time counts from `votePost`.
+
+**Fix:**
+Made `votePost` controller return real DB counts after every vote:
+```typescript
+// After any vote action, always return fresh counts
+const allVotes = await prisma.vote.groupBy({
+  by: ["value"],
+  where: { postId },
+  _count: { value: true },
+});
+
+sendSuccess(res, {
+  upvotes: allVotes.find(v => v.value === 1)?._count.value || 0,
+  downvotes: allVotes.find(v => v.value === -1)?._count.value || 0,
+  userVote: currentVote?.value ?? null,
+});
+```
+
+Frontend then syncs local state with server truth:
+```typescript
+const result = await votePost(id, type);
+setCurrentUpvotes(result.upvotes);
+setCurrentDownvotes(result.downvotes);
+setUserVote(result.userVote);
+```
+
+**Lesson:**
+For user-specific real-time actions like voting, always return
+the server's ground truth in the response. Don't rely on the
+client calculating the new state.
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Frontend | React + TypeScript + Tailwind + shadcn/ui |
+| Backend | Node.js + Express + TypeScript |
+| Database | PostgreSQL (Neon) |
+| ORM | Prisma |
+| Cache | Redis (Upstash) |
+| Auth | JWT (access + refresh tokens) |
+| Real-time | Socket.IO |
+| File Upload | Cloudinary |
+| Hosting | Vercel (frontend) + Railway (backend) |
+
+---
+
+*Built by [@kranthii-k](https://github.com/kranthii-k)*
