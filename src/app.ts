@@ -6,6 +6,7 @@ import cookieParser from "cookie-parser";
 import { rateLimit } from "express-rate-limit";
 import { RedisStore } from "rate-limit-redis";
 import { redisClient } from "./config/redis";
+import logger from "./config/logger";
 import authRoutes from "./routes/auth.routes";
 import userRoutes from "./routes/user.routes";
 import postRoutes from "./routes/post.routes";
@@ -38,7 +39,7 @@ app.use(
       if (allowedOrigins.includes(clean)) {
         callback(null, true);
       } else {
-        console.error(`CORS blocked: ${origin}`);
+        logger.error(`CORS blocked: ${origin}`);
         callback(new Error(`CORS: ${origin} not allowed`));
       }
     },

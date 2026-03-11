@@ -9,9 +9,18 @@ vi.mock('../src/config/prisma');
 
 // Mock Redis to avoid caching issues during test
 vi.mock('../src/config/redis', () => ({
-  getCached: vi.fn(),
-  setCache: vi.fn(),
-  invalidateCache: vi.fn(),
+  getCached: vi.fn().mockResolvedValue(null),
+  setCache: vi.fn().mockResolvedValue(undefined),
+  invalidateCache: vi.fn().mockResolvedValue(undefined),
+  connectRedis: vi.fn().mockResolvedValue(undefined),
+  redisClient: {
+    sendCommand: vi.fn().mockResolvedValue(null),
+    get: vi.fn().mockResolvedValue(null),
+    set: vi.fn().mockResolvedValue("OK"),
+    del: vi.fn().mockResolvedValue(1),
+    connect: vi.fn().mockResolvedValue(undefined),
+    on: vi.fn(),
+  },
 }));
 
 describe('Post Controller Integration', () => {
