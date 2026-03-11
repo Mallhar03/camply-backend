@@ -26,7 +26,7 @@ function setRefreshCookie(res: Response, token: string) {
 
 // ── Helper: build user response (no passwordHash) ─────────
 function safeUser(user: any) {
-  const { passwordHash, ...rest } = user;
+  const { passwordHash: _passwordHash, ...rest } = user;
   return rest;
 }
 
