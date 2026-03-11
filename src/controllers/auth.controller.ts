@@ -26,7 +26,8 @@ function setRefreshCookie(res: Response, token: string) {
 
 // ── Helper: build user response (no passwordHash) ─────────
 function safeUser(user: any) {
-  const { passwordHash: _passwordHash, ...rest } = user;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { passwordHash, ...rest } = user;
   return rest;
 }
 

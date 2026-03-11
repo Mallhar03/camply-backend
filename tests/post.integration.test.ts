@@ -13,7 +13,12 @@ vi.mock('../src/config/redis', () => ({
   invalidateCache: vi.fn().mockResolvedValue(undefined),
   connectRedis: vi.fn().mockResolvedValue(undefined),
   redisClient: {
-    sendCommand: vi.fn().mockResolvedValue(null),
+    sendCommand: vi.fn().mockImplementation(async (args: string[] = []) => {
+      // Mock for rate-limit-redis scripts
+      if (args[0] === 'SCRIPT' && args[1] === 'LOAD') return 'dummy-sha';
+      if (args[0] === 'EVALSHA') return [1, 900];
+      return 'OK';
+    }),
     get: vi.fn().mockResolvedValue(null),
     set: vi.fn().mockResolvedValue('OK'),
     del: vi.fn().mockResolvedValue(1),
