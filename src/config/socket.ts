@@ -3,6 +3,8 @@ import http from "http";
 import jwt from "jsonwebtoken";
 import prisma from "./prisma";
 import logger from "./logger";
+import { createAdapter } from "@socket.io/redis-adapter";
+import { createClient } from "redis";
 
 interface TokenPayload {
   userId: string;
@@ -17,7 +19,7 @@ export function getIo(): Server {
   return io;
 }
 
-export function initSocket(httpServer: http.Server) {
+export async function initSocket(httpServer: http.Server) {
   io = new Server(httpServer, {
     cors: {
       origin: (process.env.ALLOWED_ORIGINS || "http://localhost:8080")
@@ -26,6 +28,15 @@ export function initSocket(httpServer: http.Server) {
       credentials: true,
     },
   });
+
+  const pubClient = createClient({ url: process.env.REDIS_URL });
+  const subClient = pubClient.duplicate();
+
+  pubClient.on("error", (err) => logger.error("Socket Redis pub error:", err));
+  subClient.on("error", (err) => logger.error("Socket Redis sub error:", err));
+
+  await Promise.all([pubClient.connect(), subClient.connect()]);
+  io.adapter(createAdapter(pubClient, subClient));
 
   // ── Auth middleware ────────────────────────────────────
   io.use((socket, next) => {

@@ -26,7 +26,8 @@ function setRefreshCookie(res: Response, token: string) {
 
 // ── Helper: build user response (no passwordHash) ─────────
 function safeUser(user: any) {
-  const { passwordHash: _, ...rest } = user;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { passwordHash, ...rest } = user;
   return rest;
 }
 
@@ -104,7 +105,7 @@ export async function login(
       },
     });
 
-    if (!user) {
+    if (!user || !user.passwordHash) {
       sendError(res, "Invalid credentials", 401);
       return;
     }

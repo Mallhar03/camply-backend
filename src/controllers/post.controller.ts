@@ -32,7 +32,7 @@ export async function getFeed(
 ): Promise<void> {
   try {
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
-    const limit = Math.min(50, parseInt(req.query.limit as string) || 10);
+    const limit = Math.min(50, parseInt(req.query.limit as string) || 20);
     const category = req.query.category as string | undefined;
     const skip = (page - 1) * limit;
 
@@ -53,18 +53,20 @@ export async function getFeed(
         prisma.post.count({ where }),
       ]);
 
-      const postsWithVotes = await Promise.all(
-        posts.map(async (post) => {
-          const votes = await prisma.vote.groupBy({
-            by: ["value"],
-            where: { postId: post.id },
-            _count: { value: true },
-          });
-          const upvotes = votes.find((v: { value: number; _count: { value: number } }) => v.value === 1)?._count.value || 0;
-          const downvotes = votes.find((v: { value: number; _count: { value: number } }) => v.value === -1)?._count.value || 0;
-          return { ...post, upvotes, downvotes };
-        })
-      );
+      // ✅ Single query for ALL votes at once (replaces N+1 loop)
+      const postIds = posts.map((p) => p.id);
+      const allVotes = await prisma.vote.groupBy({
+        by: ["postId", "value"],
+        where: { postId: { in: postIds } },
+        _count: { value: true },
+      });
+
+      const postsWithVotes = posts.map((post) => {
+        const postVotes = allVotes.filter((v) => v.postId === post.id);
+        const upvotes = postVotes.find((v) => v.value === 1)?._count.value || 0;
+        const downvotes = postVotes.find((v) => v.value === -1)?._count.value || 0;
+        return { ...post, upvotes, downvotes };
+      });
 
       cachedPayload = {
         posts: postsWithVotes,
@@ -77,14 +79,14 @@ export async function getFeed(
         },
       };
 
-      await setCache(cacheKey, cachedPayload, 60); // 1 min TTL
+      await setCache(cacheKey, cachedPayload, 300);
     }
 
     // Now, dynamically attach user-specific data (userVote) to the cached/fresh payload
     if (req.user) {
       const userId = req.user.userId;
       const postIds = (cachedPayload as any).posts.map((p: any) => p.id);
-      
+
       const userVotes = await prisma.vote.findMany({
         where: {
           userId,
@@ -92,9 +94,9 @@ export async function getFeed(
         },
         select: { postId: true, value: true }
       });
-      
+
       const voteMap = new Map(userVotes.map((v: any) => [v.postId, v.value]));
-      
+
       (cachedPayload as any).posts = (cachedPayload as any).posts.map((post: any) => ({
         ...post,
         userVote: voteMap.get(post.id) ?? null
@@ -129,7 +131,7 @@ export async function createPost(
     // Update trust score (non-fatal)
     await awardTrust(req.user!.userId, "POST_CREATED");
 
-    await invalidateCache(`feed:all:*`);
+    await invalidateCache(`feed:*`);
 
     sendSuccess(res, { post }, "Post created", 201);
   } catch (err) {
@@ -166,7 +168,25 @@ export async function getPost(
       return;
     }
 
-    sendSuccess(res, { post });
+    const allVotes = await prisma.vote.groupBy({
+      by: ["value"],
+      where: { postId: id },
+      _count: { value: true },
+    });
+
+    const upvotes = allVotes.find((v) => v.value === 1)?._count.value || 0;
+    const downvotes = allVotes.find((v) => v.value === -1)?._count.value || 0;
+
+    let userVote = null;
+    if (req.user) {
+      const currentVote = await prisma.vote.findUnique({
+        where: { postId_userId: { postId: id, userId: req.user.userId } },
+        select: { value: true },
+      });
+      userVote = currentVote?.value ?? null;
+    }
+
+    sendSuccess(res, { post: { ...post, upvotes, downvotes, userVote } });
   } catch (err) {
     next(err);
   }
@@ -196,6 +216,7 @@ export async function deletePost(
     }
 
     await prisma.post.delete({ where: { id } });
+    await invalidateCache(`feed:*`);
     sendSuccess(res, null, "Post deleted");
   } catch (err) {
     next(err);
@@ -224,23 +245,45 @@ export async function votePost(
 
     if (existing) {
       if (existing.value === value) {
-        // Toggle off
+        // Toggle off — remove vote
         await prisma.vote.delete({ where: { postId_userId: { postId, userId } } });
-        sendSuccess(res, { voted: false }, "Vote removed");
       } else {
+        // Switch vote direction
         await prisma.vote.update({
           where: { postId_userId: { postId, userId } },
           data: { value },
         });
-        sendSuccess(res, { voted: true, value }, "Vote updated");
       }
     } else {
+      // New vote
       await prisma.vote.create({ data: { postId, userId, value } });
-      // Notify post author
-      const postRecord = await prisma.post.findUnique({ where: { id: postId }, select: { authorId: true } });
+      const postRecord = await prisma.post.findUnique({
+        where: { id: postId },
+        select: { authorId: true },
+      });
       if (postRecord) notifyVote(postRecord.authorId, userId, postId, value);
-      sendSuccess(res, { voted: true, value }, "Vote recorded");
     }
+
+    // Always return fresh counts + current userVote after any change
+    const allVotes = await prisma.vote.groupBy({
+      by: ["value"],
+      where: { postId },
+      _count: { value: true },
+    });
+
+    const upvotes = allVotes.find((v) => v.value === 1)?._count.value || 0;
+    const downvotes = allVotes.find((v) => v.value === -1)?._count.value || 0;
+
+    const currentVote = await prisma.vote.findUnique({
+      where: { postId_userId: { postId, userId } },
+      select: { value: true },
+    });
+
+    sendSuccess(res, {
+      upvotes,
+      downvotes,
+      userVote: currentVote?.value ?? null,
+    }, "Vote updated");
   } catch (err) {
     next(err);
   }
@@ -276,6 +319,7 @@ export async function addComment(
     const post = await prisma.post.findUnique({ where: { id: postId }, select: { authorId: true } });
     if (post) notifyComment(post.authorId, req.user!.userId, postId);
 
+    await invalidateCache(`feed:*`);
     sendSuccess(res, { comment }, "Comment added", 201);
   } catch (err) {
     next(err);
@@ -308,7 +352,7 @@ export async function updatePost(
       select: POST_SELECT,
     });
 
-    await invalidateCache(`feed:all:*`);
+    await invalidateCache(`feed:*`);
     sendSuccess(res, { post: updated }, "Post updated");
   } catch (err) {
     next(err);

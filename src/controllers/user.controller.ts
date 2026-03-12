@@ -112,8 +112,8 @@ export async function changePassword(
       select: { passwordHash: true },
     });
 
-    if (!user) {
-      sendError(res, "User not found", 404);
+    if (!user || !user.passwordHash) {
+      sendError(res, "User not found or logged in via OAuth", 404);
       return;
     }
 

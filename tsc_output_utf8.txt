@@ -1,0 +1,20 @@
+﻿src/config/passport.ts(27,29): error TS2345: Argument of type '{ passwordHash: string | null; name: string; username: string; email: string; id: string; googleId: string | null; bio: string | null; avatar: string | null; college: string | null; skills: string[]; trustLevel: TrustLevel; trustScore: number; createdAt: Date; updatedAt: Date; }' is not assignable to parameter of type 'false | User | undefined'.
+  Property 'userId' is missing in type '{ passwordHash: string | null; name: string; username: string; email: string; id: string; googleId: string | null; bio: string | null; avatar: string | null; college: string | null; skills: string[]; trustLevel: TrustLevel; trustScore: number; createdAt: Date; updatedAt: Date; }' but required in type 'User'.
+src/config/passport.ts(39,29): error TS2345: Argument of type '{ passwordHash: string | null; name: string; username: string; email: string; id: string; googleId: string | null; bio: string | null; avatar: string | null; college: string | null; skills: string[]; trustLevel: TrustLevel; trustScore: number; createdAt: Date; updatedAt: Date; }' is not assignable to parameter of type 'false | User | undefined'.
+  Property 'userId' is missing in type '{ passwordHash: string | null; name: string; username: string; email: string; id: string; googleId: string | null; bio: string | null; avatar: string | null; college: string | null; skills: string[]; trustLevel: TrustLevel; trustScore: number; createdAt: Date; updatedAt: Date; }' but required in type 'User'.
+src/config/passport.ts(67,27): error TS2345: Argument of type '{ passwordHash: string | null; name: string; username: string; email: string; id: string; googleId: string | null; bio: string | null; avatar: string | null; college: string | null; skills: string[]; trustLevel: TrustLevel; trustScore: number; createdAt: Date; updatedAt: Date; }' is not assignable to parameter of type 'false | User | undefined'.
+  Property 'userId' is missing in type '{ passwordHash: string | null; name: string; username: string; email: string; id: string; googleId: string | null; bio: string | null; avatar: string | null; college: string | null; skills: string[]; trustLevel: TrustLevel; trustScore: number; createdAt: Date; updatedAt: Date; }' but required in type 'User'.
+src/controllers/auth.controller.ts(113,50): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(s: string, hash: string): Promise<boolean>', gave the following error.
+    Argument of type 'string | null' is not assignable to parameter of type 'string'.
+      Type 'null' is not assignable to type 'string'.
+  Overload 2 of 2, '(s: string, hash: string, callback?: ((err: Error | null, success: boolean) => void) | undefined, progressCallback?: ((percent: number) => void) | undefined): void', gave the following error.
+    Argument of type 'string | null' is not assignable to parameter of type 'string'.
+      Type 'null' is not assignable to type 'string'.
+src/controllers/user.controller.ts(120,57): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(s: string, hash: string): Promise<boolean>', gave the following error.
+    Argument of type 'string | null' is not assignable to parameter of type 'string'.
+      Type 'null' is not assignable to type 'string'.
+  Overload 2 of 2, '(s: string, hash: string, callback?: ((err: Error | null, success: boolean) => void) | undefined, progressCallback?: ((percent: number) => void) | undefined): void', gave the following error.
+    Argument of type 'string | null' is not assignable to parameter of type 'string'.
+      Type 'null' is not assignable to type 'string'.

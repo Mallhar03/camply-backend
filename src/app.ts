@@ -4,7 +4,9 @@ import helmet from "helmet";
 import morgan from "morgan";
 import cookieParser from "cookie-parser";
 import { rateLimit } from "express-rate-limit";
-
+import { RedisStore } from "rate-limit-redis";
+import { redisClient } from "./config/redis";
+import logger from "./config/logger";
 import authRoutes from "./routes/auth.routes";
 import userRoutes from "./routes/user.routes";
 import postRoutes from "./routes/post.routes";
@@ -13,25 +15,34 @@ import teamRoutes from "./routes/team.routes";
 import chatRoutes from "./routes/chat.routes";
 import uploadRoutes from "./routes/upload.routes";
 
+import passport from "./config/passport";
+
 import { errorHandler } from "./middleware/error.middleware";
 import { notFound } from "./middleware/notFound.middleware";
 
 const app = express();
 
+// ✅ Trust Railway/Render/Vercel proxy — MUST be before rate limiter
+app.set("trust proxy", 1);
+
 // ─── Security ───────────────────────────────────────────
 app.use(helmet());
+app.use(passport.initialize());
 
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:8080,http://localhost:5173")
   .split(",")
-  .map((o) => o.trim());
+  .map((o) => o.trim().replace(/\/$/, ""));
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (e.g. mobile / Postman)
-      if (!origin || allowedOrigins.includes(origin)) {
+      if (!origin) return callback(null, true);
+      if (process.env.NODE_ENV !== "production") return callback(null, true);
+      const clean = origin.replace(/\/$/, "");
+      if (allowedOrigins.includes(clean)) {
         callback(null, true);
       } else {
+        logger.error(`CORS blocked: ${origin}`);
         callback(new Error(`CORS: ${origin} not allowed`));
       }
     },
@@ -41,19 +52,24 @@ app.use(
 
 // ─── Rate limiting ───────────────────────────────────────
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 min
+  windowMs: 15 * 60 * 1000,
   max: 200,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: { message: "Too many requests, please slow down." } },
+  store: new RedisStore({
+    sendCommand: (...args: string[]) => redisClient.sendCommand(args),
+  }),
 });
 app.use(limiter);
 
-// Stricter limiter for auth routes
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
   message: { error: { message: "Too many auth attempts, try again later." } },
+  store: new RedisStore({
+    sendCommand: (...args: string[]) => redisClient.sendCommand(args),
+  }),
 });
 
 // ─── Body / cookie parsing ───────────────────────────────
