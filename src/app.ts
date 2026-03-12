@@ -63,14 +63,6 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
-  message: { error: { message: "Too many auth attempts, try again later." } },
-  store: new RedisStore({
-    sendCommand: (...args: string[]) => redisClient.sendCommand(args),
-  }),
-});
 
 // ─── Body / cookie parsing ───────────────────────────────
 app.use(express.json({ limit: "10mb" }));
@@ -88,7 +80,7 @@ app.get("/health", (_req, res) => {
 });
 
 // ─── Routes ──────────────────────────────────────────────
-app.use("/api/v1/auth", authLimiter, authRoutes);
+app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/users", userRoutes);
 app.use("/api/v1/posts", postRoutes);
 app.use("/api/v1/match", matchRoutes);
