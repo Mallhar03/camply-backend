@@ -4,3 +4,12 @@ dist/
 .env.local
 *.log
 .DS_Store
+# Local Dev Artifacts
+DEVLOG.md
+sync_*.sh
+sync_*.log
+*.txt
+test_*.js
+test_*.ts
+tmp_*.js
+tests/local/
