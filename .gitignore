@@ -6,6 +6,7 @@ dist/
 .DS_Store
 # Local Dev Artifacts
 DEVLOG.md
+EDUCATION.md
 sync_*.sh
 sync_*.log
 *.txt

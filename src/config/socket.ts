@@ -29,14 +29,19 @@ export async function initSocket(httpServer: http.Server) {
     },
   });
 
-  const pubClient = createClient({ url: process.env.REDIS_URL });
-  const subClient = pubClient.duplicate();
+  try {
+    const pubClient = createClient({ url: process.env.REDIS_URL || "redis://localhost:6379" });
+    const subClient = pubClient.duplicate();
 
-  pubClient.on("error", (err) => logger.error("Socket Redis pub error:", err));
-  subClient.on("error", (err) => logger.error("Socket Redis sub error:", err));
+    pubClient.on("error", (err) => logger.error("Socket Redis pub error:", err));
+    subClient.on("error", (err) => logger.error("Socket Redis sub error:", err));
 
-  await Promise.all([pubClient.connect(), subClient.connect()]);
-  io.adapter(createAdapter(pubClient, subClient));
+    await Promise.all([pubClient.connect(), subClient.connect()]);
+    io.adapter(createAdapter(pubClient, subClient));
+    logger.info("Socket.IO Redis adapter attached");
+  } catch (err) {
+    logger.warn("Socket.IO running without Redis adapter (scaling limited)", err);
+  }
 
   // ── Auth middleware ────────────────────────────────────
   io.use((socket, next) => {

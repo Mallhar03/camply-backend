@@ -9,7 +9,11 @@ redisClient.on("error", (err) => logger.error("Redis error", err));
 redisClient.on("connect", () => logger.info("Redis connected"));
 
 export async function connectRedis() {
-  await redisClient.connect();
+  try {
+    await redisClient.connect();
+  } catch (err) {
+    logger.warn("Redis connection failed – functionality will be limited", err);
+  }
 }
 
 /**
