@@ -4,7 +4,7 @@ import { initSocket } from "./config/socket";
 import { connectRedis } from "./config/redis";
 import logger from "./config/logger";
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 8080;
 
 async function bootstrap() {
   // Connect Redis (non-fatal – app still works without it)
